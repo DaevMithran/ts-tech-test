@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import * as net from "net";
-import { AckMessage, Amount, MessageId, MessagePayload, MessageType, PeerEvent } from "./types.js";
+import { Amount, MessageId, MessagePayload, MessageType, PayAckMessage, PayMessage, PayRejectMessage, PeerEvent } from "./types.js";
 import { EventEmitter } from "events";
 
 export class Peer extends EventEmitter<PeerEvent> {
@@ -30,9 +30,9 @@ export class Peer extends EventEmitter<PeerEvent> {
         });
     }
 
-    connect(port: number): Promise<void> {
+    connect(port: number, host: string = "127.0.0.1"): Promise<void> {
         return new Promise((resolve, reject) => {
-            this.socket = net.createConnection({ port }, () => {
+            this.socket = net.createConnection( port, host , () => {
             this.onPeerConnected(this.socket!);
                 resolve();
             });
@@ -43,18 +43,40 @@ export class Peer extends EventEmitter<PeerEvent> {
         });
     }
 
-    transfer(amount: number) {
-        const message = {
+    transfer(amount: number): string {
+        if (!this.getIsConnected()) {
+            this.emit("error", "Peer: Transfer: No active peer connection.");
+        }
+
+        if (amount <= 0) {
+            this.emit("error", "Peer: Transfer: Transfer amount must be positive.");
+        }
+
+        const message: PayMessage = {
             id: randomUUID(),
             type: MessageType.Pay,
             amount: amount.toString(),
         }
         this.pendingPayments.set(message.id, amount)
-        this.sendMessage(message)    
+        this.sendMessage(message)
+
+        return message.id
     }
 
     getBalance(): number {
         return this.balance
+    }
+    
+    cleanup() {
+        this.emit('disconnected')
+        if (this.socket && !this.socket.destroyed) {
+            this.socket.destroy()
+            this.socket = null
+        }
+    }
+
+    getIsConnected(): boolean {
+        return !!this.socket && !this.socket.destroyed
     }
 
     private setBalance(balance: number) {
@@ -74,11 +96,20 @@ export class Peer extends EventEmitter<PeerEvent> {
             case MessageType.Pay:
                 const currentBalance = this.getBalance()
                 const amount =  parseInt(message.amount)
+                if (isNaN(amount) || amount <= 0) {
+                    this.sendMessage({
+                        type: MessageType.PayReject,
+                        id: message.id,
+                        reason: "Invalid amount"
+                    } satisfies PayRejectMessage);
+                    this.emit("error", "Peer: Handle: Invalid Amount Received")
+                    return;
+                }
                 this.setBalance(currentBalance + amount)
                 this.sendMessage({
                     type: MessageType.PayAck,
                     id: message.id
-                } satisfies AckMessage)
+                } satisfies PayAckMessage)
                 this.emit('paid', amount)
                 break
             case MessageType.PayAck: {
@@ -93,14 +124,6 @@ export class Peer extends EventEmitter<PeerEvent> {
         }
 
         return
-    }
-
-    cleanup() {
-        this.emit('disconnected')
-        if (this.socket && !this.socket.destroyed) {
-            this.socket.destroy()
-            this.socket = null
-        }
     }
 
     private onPeerConnected(socket: net.Socket) {
@@ -126,6 +149,7 @@ export class Peer extends EventEmitter<PeerEvent> {
         });
 
         socket.on("error", (err: Error) => {
+            this.emit("error", `Peer: Socket: ${err.message}`)
             this.cleanup();
             process.exit(1);
         });        

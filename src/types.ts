@@ -10,9 +10,10 @@ export enum CommandType {
 export enum MessageType {
     Pay    = "PAY",
     PayAck = "PAY_ACK",
+    PayReject = "PAY_REJECT"
 }
 
-export type MessagePayload = PayMessage | AckMessage
+export type MessagePayload = PayMessage | PayAckMessage | PayRejectMessage
 export type MessageId = string
 export type Amount = number
 
@@ -22,13 +23,21 @@ export type PayMessage = {
     amount: string,
 }
 
-export type AckMessage = {
+export type PayAckMessage = {
     type: MessageType.PayAck,
     id: MessageId
 }
 
+export type PayRejectMessage = {
+    type: MessageType.PayReject,
+    id: MessageId
+    reason: string
+}
+
 export interface PeerEvent extends EventEmitterEventMap {
-    connected: [],
-    paid: [amount: number],
+    connected: []
+    disconnected: []
+    paid: [amount: number]
     ack: [id: string]
+    error: [reason: string]
 }

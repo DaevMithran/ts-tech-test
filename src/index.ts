@@ -2,7 +2,6 @@
 
 import inquirer from "inquirer"
 import chalk from "chalk"
-import stringify from "json-stringify-pretty-compact"
 import figlet from "figlet"
 import { Peer } from "./peer.js"
 import { CommandType } from "./types.js"
@@ -18,11 +17,30 @@ const displayTitle = () => {
 }
 
 const parsePort = (v: string) => {
-    const port = parseInt(v)
-    if(isNaN(port)) {
-        throw new Error("Must be a valid port number (1-65535)")
+    // Only port
+    const port = parseInt(v);
+    if (isNaN(port)) {
+        throw new Error("Must be a valid port number or host:port");
     }
-    return port
+
+    return { host: '127.0.0.1', port };
+}
+
+const parseAddress = (v: string) => {
+    const parts = v.split(':');
+    
+    // Host:Port
+    if (parts.length === 2) {
+        const host = parts[0];
+        const port = parseInt(parts[1]!);
+
+        if (isNaN(port)) {
+            throw new Error("Invalid port in host:port string");
+        }
+        return { host, port };
+    }
+
+    return parsePort(v)
 }
 
 const program = new Command();
@@ -31,24 +49,24 @@ program
     .name("start-peer")
     .description("Peering Relationships")
     .argument("<port>", "port to listen on", parsePort)
-    .argument("[target]", "port of connecting peer", parsePort)
+    .argument("[target]", "Address of connecting peer (host:port or port)", parseAddress)
     .showHelpAfterError()
     .parse()
 
-const [ port, target ] =  program.processedArgs as number[]
+const [ source, target ] =  program.processedArgs as { host: string, port: number}[]
 
 // Initialize Peer
-const peer = new Peer(port!)
+const peer = new Peer(source?.port!)
 
 if (target) {
     const attemptConnection = async () => {
       try {
-        await peer.connect(target);
+        await peer.connect(target.port, target.host);
       } catch (err) {
         setTimeout(attemptConnection, 3000);
       }
     };
-    console.log(chalk.yellow(`Waiting for peer on port ${target}...`));
+    console.log(chalk.yellow(`Waiting for peer on ${target.host}:${target.port}...`));
     attemptConnection();
 }
 
@@ -61,11 +79,21 @@ peer.on("connected", async () => {
 });
 
 peer.on("paid", async(amount)=>{
-    console.log(chalk.green("\n Received payment of", amount))
+    console.log(chalk.green("\n#####################################################################"))
+    console.log(chalk.green(`         Received payment of ${amount}`))
+    console.log(chalk.green("#####################################################################\n"))
 })
 
 peer.on("ack", async(id)=>{
-    console.log(chalk.green("\n Received payment acknowledgement for payment id", id))
+    console.log(chalk.green("\n#####################################################################"))
+    console.log(chalk.green(`    Received ack for ${id}`))
+    console.log(chalk.green("#####################################################################\n"))
+})
+
+peer.on("error", async(reason)=>{
+    console.log(chalk.red("\n#####################################################################"))
+    console.log(chalk.red(`    Received error for ${reason}`))
+    console.log(chalk.red("#####################################################################\n"))
 })
 
 const cli = async () => {
@@ -78,13 +106,10 @@ const cli = async () => {
         {
             type: "list",
             name: "action",
-            message: chalk.cyan("Select an action:"),
+            message: chalk.cyan("Select an action: \n"),
             choices: [ CommandType.Pay, CommandType.Balance, CommandType.Exit ],
         },
     ])
-
-    console.clear()
-    displayTitle()
 
     switch (action) {
       case CommandType.Pay:
@@ -92,17 +117,20 @@ const cli = async () => {
             {
                 type: "input",
                 name: "amount",
-                message: chalk.cyan("Enter Amount to transfer:"),
+                message: chalk.cyan("Enter Amount to transfer: \n"),
             },
         ])
 
-        console.log(chalk.blue(`Transferring: ${amount}`))
-        peer.transfer(amount)
-        console.log(chalk.green("Transfer Initialized"))
+        const id = peer.transfer(amount)
+        console.log(chalk.blue("\n#####################################################################"))
+        console.log(chalk.blue(`Transferring amount: ${amount} in id: ${id}`))
+        console.log(chalk.blue("#####################################################################\n"))
         continue
       case CommandType.Balance:
         const res = peer.getBalance()
-        console.log(chalk.green("Your peer relationship balance is", stringify(res)))
+        console.log(chalk.yellow("\n#####################################################################"))
+        console.log(chalk.yellow(`                   Your balance is ${res}`))
+        console.log(chalk.yellow("#####################################################################\n"))
         continue
       case CommandType.Exit:
         console.log(chalk.yellow("Exiting..."))
