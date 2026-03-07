@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto";
 import * as net from "net";
-import { Amount, MessageId, MessagePayload, MessageType, PayAckMessage, PayMessage, PayRejectMessage, PeerEvent } from "./types.js";
+import { Amount, MessageId, MessagePayload, MessageType, PayAckMessage, PayMessage, PayRejectMessage, PeerError, PeerEvent } from "./types.js";
 import { EventEmitter } from "events";
 
 export class Peer extends EventEmitter<PeerEvent> {
     private balance: number = 0
     private socketData = ""
+    private server: net.Server | null = null
     private socket: net.Socket | null = null
     private pendingPayments= new Map<MessageId, Amount>()  
 
@@ -15,16 +16,14 @@ export class Peer extends EventEmitter<PeerEvent> {
     }
 
     initialize(port: number) {
-        const s = net.createServer((s)=> {
+        this.server = net.createServer((s)=> {
             this.socket = s
             this.onPeerConnected(this.socket)
         })
 
-        s.listen(port, () => {
-            console.log(`Listening on port ${port}... waiting for peer to connect.`);
-        });
+        this.server.listen(port);
 
-        s.on("error", (err: Error) => {
+        this.server.on("error", (err: Error) => {
             console.error(`Server error: ${err.message}`);
             process.exit(1);
         });
@@ -43,13 +42,15 @@ export class Peer extends EventEmitter<PeerEvent> {
         });
     }
 
-    transfer(amount: number): string {
+    transfer(amount: number): string | undefined{
         if (!this.getIsConnected()) {
-            this.emit("error", "Peer: Transfer: No active peer connection.");
+            this.emit("error", PeerError.NoConnection)
+            return
         }
 
         if (amount <= 0) {
-            this.emit("error", "Peer: Transfer: Transfer amount must be positive.");
+            this.emit("error", PeerError.TransferInvalidAmount)
+            return
         }
 
         const message: PayMessage = {
@@ -73,6 +74,11 @@ export class Peer extends EventEmitter<PeerEvent> {
             this.socket.destroy()
             this.socket = null
         }
+
+        if(this.server) {
+            this.server.close()
+            this.server = null
+        }
     }
 
     getIsConnected(): boolean {
@@ -86,7 +92,7 @@ export class Peer extends EventEmitter<PeerEvent> {
     private sendMessage(message: MessagePayload) {
         this.socket?.write(JSON.stringify(message) + "\n", (err)=> {
             if(err) {
-                console.log(err?.message)
+                console.error(err?.message)
             }
         })
     }
@@ -96,13 +102,14 @@ export class Peer extends EventEmitter<PeerEvent> {
             case MessageType.Pay:
                 const currentBalance = this.getBalance()
                 const amount =  parseInt(message.amount)
+                // Edge case if one peer is malicious
                 if (isNaN(amount) || amount <= 0) {
                     this.sendMessage({
                         type: MessageType.PayReject,
                         id: message.id,
-                        reason: "Invalid amount"
+                        reason: PeerError.HandleInvalidAmount
                     } satisfies PayRejectMessage);
-                    this.emit("error", "Peer: Handle: Invalid Amount Received")
+                    this.emit("error", PeerError.HandleInvalidAmount)
                     return;
                 }
                 this.setBalance(currentBalance + amount)
@@ -143,15 +150,13 @@ export class Peer extends EventEmitter<PeerEvent> {
             });
 
         socket.on("close", () => {
-            console.log("\nConnection lost. Goodbye.")
+            // console.debug("\nConnection lost. Goodbye.")
             this.cleanup()
-            process.exit(0)
         });
 
         socket.on("error", (err: Error) => {
             this.emit("error", `Peer: Socket: ${err.message}`)
             this.cleanup();
-            process.exit(1);
         });        
     }
 }

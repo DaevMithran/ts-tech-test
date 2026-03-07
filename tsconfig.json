@@ -36,5 +36,7 @@
 
     // Recommended Options
     "strict": true
-  }
+  },
+  "include": ["src/*.ts"],
+  "exclude": ["tests"]
 }
