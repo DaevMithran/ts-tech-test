@@ -122,9 +122,11 @@ const cli = async () => {
         ])
 
         const id = peer.transfer(amount)
-        console.log(chalk.blue("\n#####################################################################"))
-        console.log(chalk.blue(`Transferring amount: ${amount} in id: ${id}`))
-        console.log(chalk.blue("#####################################################################\n"))
+        if(id) {
+          console.log(chalk.blue("\n#####################################################################"))
+          console.log(chalk.blue(`Transferring amount: ${amount} in id: ${id}`))
+          console.log(chalk.blue("#####################################################################\n"))
+        }
         continue
       case CommandType.Balance:
         const res = peer.getBalance()

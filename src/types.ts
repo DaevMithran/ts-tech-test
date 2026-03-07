@@ -45,5 +45,6 @@ export interface PeerEvent extends EventEmitterEventMap {
 export enum PeerError {
     TransferInvalidAmount = "Peer: Transfer: Transfer amount must be positive.",
     HandleInvalidAmount = "Peer: Handle: Invalid Amount Received",
-    NoConnection = "Peer: Connection: No active peer connection."
+    NoConnection = "Peer: Connection: No active peer connection.",
+    PaymentRejected = "Peer: Handle: Payment Rejected",
 }

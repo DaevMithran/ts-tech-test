@@ -128,6 +128,14 @@ export class Peer extends EventEmitter<PeerEvent> {
                 }
                 break
             }
+            case MessageType.PayReject: {
+                const amount = this.pendingPayments.get(message.id)
+                if(amount) {
+                    this.pendingPayments.delete(message.id)
+                    this.emit("error", PeerError.PaymentRejected)
+                }
+                break
+            }
         }
 
         return
